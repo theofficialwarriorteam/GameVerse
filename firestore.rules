@@ -1,0 +1,21 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthorizedAdmin() {
+      return request.auth != null
+        && request.auth.token.email == "aanjorajeev@gmail.com"
+        && request.auth.token.email_verified == true;
+    }
+
+    // Public site document: games, settings, image URLs and crop settings.
+    // Anyone can read it; only the verified administrator can change it
+    // (this is what stops visitors from uploading, replacing or deleting images).
+    match /site/{documentId} {
+      allow read: if documentId == "public";
+      allow create, update, delete: if documentId == "public"
+        && isAuthorizedAdmin();
+    }
+  }
+}
