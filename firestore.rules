@@ -2,20 +2,39 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
     function isAuthorizedAdmin() {
       return request.auth != null
         && request.auth.token.email == "aanjorajeev@gmail.com"
         && request.auth.token.email_verified == true;
     }
-
-    // Public site document: games, settings, image URLs and crop settings.
-    // Anyone can read it; only the verified administrator can change it
-    // (this is what stops visitors from uploading, replacing or deleting images).
     match /site/{documentId} {
       allow read: if documentId == "public";
-      allow create, update, delete: if documentId == "public"
-        && isAuthorizedAdmin();
+      allow create, update, delete: if documentId == "public" && isAuthorizedAdmin();
+    }
+    // Public submissions are intentionally constrained. Admin is the only account
+    // allowed to remove moderation records. Add rate-limiting through App Check or
+    // a trusted backend before relying on this for a large public audience.
+    match /ratings/{ratingId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['gameId','stars','createdAt'])
+        && request.resource.data.gameId is string
+        && request.resource.data.gameId.size() > 0
+        && request.resource.data.gameId.size() <= 100
+        && request.resource.data.stars is int
+        && request.resource.data.stars >= 1 && request.resource.data.stars <= 5;
+      allow update: if false;
+      allow delete: if isAuthorizedAdmin();
+    }
+    match /feedback/{feedbackId} {
+      allow create: if request.resource.data.keys().hasOnly(['gameId','message','createdAt'])
+        && request.resource.data.gameId is string
+        && request.resource.data.gameId.size() > 0
+        && request.resource.data.gameId.size() <= 100
+        && request.resource.data.message is string
+        && request.resource.data.message.size() >= 4
+        && request.resource.data.message.size() <= 1000;
+      allow read, delete: if isAuthorizedAdmin();
+      allow update: if false;
     }
   }
 }
