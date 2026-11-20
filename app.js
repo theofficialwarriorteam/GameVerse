@@ -22,7 +22,8 @@ const DEFAULT_SETTINGS = {
   directCampaigns:[]
  },
  imageHost:{provider:"cloudinary",cloudName:"",uploadPreset:"",folder:"gameverse"},
- mediaLibrary:[]
+ mediaLibrary:[],
+ downloads:{enabled:true,items:[]}
 };
 
 function mergeSettings(d){
@@ -39,7 +40,9 @@ function mergeSettings(d){
    directCampaigns:Array.isArray(d.ads?.directCampaigns)?d.ads.directCampaigns:[]
   },
   imageHost:{...DEFAULT_SETTINGS.imageHost,...(IMAGE_HOST||{}),...d.imageHost},
-  mediaLibrary:Array.isArray(d.mediaLibrary)?d.mediaLibrary:[]
+  mediaLibrary:Array.isArray(d.mediaLibrary)?d.mediaLibrary:[],
+  downloads:{...DEFAULT_SETTINGS.downloads,...d.downloads,items:Array.isArray(d.downloads?.items)?d.downloads.items:[]},
+  features:{...DEFAULT_SETTINGS.features,...d.features}
  };
 }
 
@@ -71,6 +74,7 @@ function navigate(hash){
 
 function activeTasks(){
  const c=state.settings.community;
+ if(state.settings.features?.tasksEnabled===false)return [];
  return [
   {id:"youtube",title:"Subscribe to Winjo Gamerz",desc:"Visit our YouTube channel.",url:c.youtube,icon:"▶"},
   {id:"like",title:"Like the selected video",desc:"Open the selected YouTube video.",url:c.like,icon:"♥"},
@@ -194,12 +198,30 @@ async function saveCloud(){
  );
 }
 
+
+async function loadGameMetrics(gameId){const el=$("#game-analytics"),base=String(state.settings.features?.statsApiUrl||"").trim();if(!el||!base||state.settings.features?.analyticsEnabled===false)return;try{const r=await fetch(base.replace(/\/$/,"")+"/stats");if(!r.ok)throw Error();const d=await r.json(),g=(d.games||[]).find(x=>x.gameId===gameId);el.textContent=g?`Community activity · ${Number(g.views)||0} game views · ${Number(g.plays)||0} Play Now clicks`:`Community activity · No tracked views yet.`}catch{el.textContent="Game statistics temporarily unavailable."}}
+async function trackMetric(type,gameId=""){
+ const url=String(state.settings.features?.statsApiUrl||"").trim();
+ if(!url||state.settings.features?.analyticsEnabled===false)return;
+ try{await fetch(url.replace(/\/$/,"")+"/event",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({type,gameId,visitorId:getVisitorId()}),keepalive:true});}catch(e){console.warn("Analytics event not recorded",e)}
+}
+function getVisitorId(){let id=localStorage.getItem("gv_visitor_id");if(!id){id=crypto.randomUUID();localStorage.setItem("gv_visitor_id",id)}return id}
+async function loadFooterStats(){const el=$("#gv-footer-stats"),url=String(state.settings.features?.statsApiUrl||"").trim();if(!el||!url||state.settings.features?.analyticsEnabled===false)return;try{const r=await fetch(url.replace(/\/$/,"")+"/stats");if(!r.ok)throw Error("Stats unavailable");const d=await r.json();el.textContent=` · Visitors: ${Number(d.totalVisitors)||0} · Today: ${Number(d.todayVisitors)||0} · Online: ${Number(d.onlineNow)||0}`;}catch{el.textContent=" · Live statistics temporarily unavailable"}}
+async function wireCommunityFeedback(game){
+ const f=state.fb;if(!f)return;
+ try{
+  if(state.settings.features?.ratingsEnabled!==false){const snap=await f.getDocs(f.collection(f.db,"ratings"));const rows=snap.docs.map(x=>x.data()).filter(x=>x.gameId===game.id);const avg=rows.length?rows.reduce((a,x)=>a+Number(x.stars||0),0)/rows.length:0;const el=$("#rating-summary");if(el)el.textContent=rows.length?`${avg.toFixed(1)} / 5 from ${rows.length} rating(s)`:"No ratings yet — be the first!";}
+ }catch(e){console.warn("Could not load ratings",e)}
+ $("#rating-form")?.addEventListener("submit",async e=>{e.preventDefault();try{const stars=Number(new FormData(e.currentTarget).get("stars"));if(!f||stars<1||stars>5)throw Error("Connect Firebase and choose a rating.");await f.addDoc(f.collection(f.db,"ratings"),{gameId:game.id,stars,createdAt:f.serverTimestamp()});toast("Thanks for rating this game!");wireCommunityFeedback(game)}catch(err){toast(err.message||"Rating could not be saved.")}});
+ $("#feedback-form")?.addEventListener("submit",async e=>{e.preventDefault();try{if(!f)throw Error("Feedback needs Firebase connection.");const message=String(new FormData(e.currentTarget).get("message")||"").trim();if(message.length<4)throw Error("Please enter a little more detail.");await f.addDoc(f.collection(f.db,"feedback"),{gameId:game.id,message:message.slice(0,1000),createdAt:f.serverTimestamp()});e.currentTarget.reset();$("#feedback-status").textContent="Thanks! Your feedback was submitted.";}catch(err){toast(err.message||"Feedback could not be sent.")}});
+}
+
 function footer(){
- return `<footer class="footer"><div class="container footer-inner"><div>© ${new Date().getFullYear()} GAMEVERSE. Independent gaming directory.</div><div class="footer-links"><a href="#home">Home</a><a href="#games">Games</a><a href="#contact">Contact</a><a href="#privacy">Privacy</a><a href="#terms">Terms</a></div></div></footer>`;
+ return `<footer class="footer"><div class="container footer-inner"><div>© ${new Date().getFullYear()} GAMEVERSE. Independent gaming directory. <span class="gv-live-stats" id="gv-footer-stats">Visitor statistics unavailable until the analytics Worker is configured.</span></div><div class="footer-links"><a href="#home">Home</a><a href="#games">Games</a><a href="#downloads">Downloads</a><a href="#contact">Contact</a><a href="#privacy">Privacy</a><a href="#terms">Terms</a></div></div></footer>`;
 }
 
 function header(){
- return `<header class="topbar"><a class="logo" href="#home"><span class="logo-icon">G</span> GAMEVERSE</a><nav class="nav"><a href="#home">HOME</a><a href="#games">GAMES</a><a href="#contact">CONTACT</a></nav><div class="actions"><a class="btn btn-primary btn-small" href="#games">EXPLORE GAMES ↗</a></div></header>`;
+ return `<header class="topbar"><a class="logo" href="#home"><span class="logo-icon">G</span> GAMEVERSE</a><nav class="nav"><a href="#home">HOME</a><a href="#games">GAMES</a><a href="#downloads">DOWNLOADS</a><a href="#contact">CONTACT</a></nav><div class="actions"><a class="btn btn-primary btn-small" href="#games">EXPLORE GAMES ↗</a></div></header>`;
 }
 
 const PH169="https://placehold.co/800x450/151b26/ffffff?text=GAMEVERSE";
@@ -227,7 +249,10 @@ function screenshotHTML(g){
 }
 
 function detailHTML(g){
- return `<a class="btn btn-ghost btn-small" href="#games">← BACK TO LIBRARY</a><div class="game-detail" style="margin-top:28px"><div><div class="detail-image">${coverInner(g)}</div>${screenshotHTML(g)}</div><div class="detail-copy"><div class="eyebrow">${esc(g.category||"GAME")}</div><h1>${esc(g.title)}</h1><p>${esc(g.description||g.shortDescription||"")}</p><p class="muted-note" style="text-align:left">This game is hosted by an external website. Availability, compatibility and terms are controlled by that provider.</p>${isValidUrl(g.url)?`<a class="btn btn-primary" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">PLAY NOW ↗</a>`:'<button class="btn" disabled>COMING SOON</button>'}</div></div>`;
+ return `<a class="btn btn-ghost btn-small" href="#games">← BACK TO LIBRARY</a><div class="game-detail" style="margin-top:28px"><div><div class="detail-image">${coverInner(g)}</div>${screenshotHTML(g)}</div><div class="detail-copy"><div class="eyebrow">${esc(g.category||"GAME")}</div><h1>${esc(g.title)}</h1><p>${esc(g.description||g.shortDescription||"")}</p><p class="muted-note" style="text-align:left">This game is hosted by an external website. Availability, compatibility and terms are controlled by that provider.</p>${isValidUrl(g.url)?`<a class="btn btn-primary" id="play-game-btn" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">PLAY NOW ↗</a>`:'<button class="btn" disabled>COMING SOON</button>'}</div></div>
+ <p id="game-analytics" class="muted-note">Game statistics are unavailable until analytics is configured.</p>
+ ${state.settings.features?.ratingsEnabled!==false?`<section class="panel gv-rating-panel"><h2>RATE THIS GAME</h2><p class="section-sub">Share your rating with the GAMEVERSE community.</p><form id="rating-form"><select class="field" name="stars" required><option value="">Choose stars</option>${[5,4,3,2,1].map(n=>`<option value="${n}">${'★'.repeat(n)} (${n}/5)</option>`).join('')}</select><button class="btn btn-primary" style="margin-top:10px">SUBMIT RATING</button></form><p id="rating-summary" class="muted-note">Ratings load when connected to Firebase.</p></section>`:''}
+ ${state.settings.features?.feedbackEnabled!==false?`<section class="panel gv-rating-panel"><h2>GAME FEEDBACK</h2><form id="feedback-form" class="form-grid"><div class="form-row full"><label>Your feedback</label><textarea class="field" name="message" maxlength="1000" required placeholder="What did you think about this game?"></textarea></div><div class="form-row full"><button class="btn">SEND FEEDBACK</button></div></form><div id="feedback-status" class="muted-note">Please keep feedback respectful. Do not share personal information.</div></section>`:''}`;
 }
 
 function heroHTML(h){
@@ -269,6 +294,7 @@ function renderUnlock(){
   }
 
   localStorage.setItem("gv_unlocked","yes");
+  localStorage.setItem("gv_unlock_expires",String(Date.now()+(Number(state.settings.features?.taskIntervalHours)||24)*3600000));
   localStorage.removeItem("gv_task_done");
   navigate("#home");
  };
@@ -371,6 +397,16 @@ function renderGame(id){
 
  app.innerHTML=`${header()}<main class="page-shell container">${adPlacement("gameTop")}${detailHTML(g)}${adPlacement("gameBottom")}</main>${footer()}`;
  mountAdSense();
+ trackMetric("view",g.id);
+ $("#play-game-btn")?.addEventListener("click",()=>trackMetric("play",g.id));
+ wireCommunityFeedback(g);
+ loadGameMetrics(g.id);
+}
+
+function renderDownloads(){
+ const cfg=state.settings.downloads||DEFAULT_SETTINGS.downloads;
+ const items=(cfg.items||[]).filter(x=>x.published);
+ app.innerHTML=`${header()}<main class="page-shell container"><div class="page-head"><div class="eyebrow">GAMEVERSE FILE CENTER</div><h1 class="page-title">FREE GAME DOWNLOADS</h1><p>Download files published by the GAMEVERSE administrator. Check system requirements and scan files before opening them.</p></div>${cfg.enabled?`<div class="download-grid">${items.map(x=>`<article class="download-card"><div class="download-art">${x.image?`<img src="${esc(x.image)}" alt="${esc(x.title)}" loading="lazy">`:'<span>⬇</span>'}</div><div class="download-info"><div class="download-meta"><span class="download-type">${esc((x.fileType||'FILE').toUpperCase())}</span><span class="download-free">FREE</span></div><h2>${esc(x.title)}</h2><p>${esc(x.description||'No description provided.')}</p>${`<a class="btn btn-primary" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" download>DOWNLOAD ↧</a>`}</div></article>`).join('')||'<div class="empty">No downloads have been published yet. Check back soon!</div>'}</div>`:'<div class="empty">Downloads are temporarily unavailable.</div>'}<p class="muted-note" style="text-align:left;margin-top:24px">Only download games and files you are authorized to distribute. GAMEVERSE does not guarantee third-party files; scan downloads with trusted security software before running them.</p></main>${footer()}`;
 }
 
 function renderContact(){
@@ -451,7 +487,7 @@ function renderAdmin(){
 
  const tab=state.adminTab;
 
- app.innerHTML=`${header()}<div class="admin-layout"><aside class="admin-side"><h4>CONTROL CENTER</h4><div class="admin-nav">${[["overview","▦ OVERVIEW"],["games","▣ MANAGE GAMES"],["add","＋ ADD NEW GAME"],["community","◈ COMMUNITY SETTINGS"],["homepage","⌂ HOMEPAGE SETTINGS"],["contact","✉ CONTACT SETTINGS"],["media","▧ IMAGE LIBRARY & HOSTING"],["ads","▤ ADVERTISEMENT SETTINGS"]].map(([id,label])=>`<button data-tab="${id}" class="${tab===id?"active":""}">${label}</button>`).join("")}<button id="admin-logout">↪ LOG OUT</button></div></aside><section class="admin-main"><div class="admin-top"><div><div class="eyebrow">GAMEVERSE CONTROL CENTER</div><h1>${({overview:"OVERVIEW",games:"MANAGE GAMES",add:state.editingId?"EDIT GAME":"ADD NEW GAME",community:"COMMUNITY SETTINGS",homepage:"HOMEPAGE SETTINGS",contact:"CONTACT SETTINGS",media:"IMAGE LIBRARY & HOSTING",ads:"ADVERTISEMENT SETTINGS"})[tab]}</h1><small style="color:var(--muted)">${esc(state.user.email)}</small></div><a class="btn btn-ghost btn-small" href="#home">VIEW WEBSITE ↗</a></div>${adminContent(tab)}</section></div>${footer()}`;
+ app.innerHTML=`${header()}<div class="admin-layout"><aside class="admin-side"><h4>CONTROL CENTER</h4><div class="admin-nav">${[["overview","▦ OVERVIEW"],["games","▣ MANAGE GAMES"],["add","＋ ADD NEW GAME"],["downloads","⬇ DOWNLOADS"],["community","◈ COMMUNITY SETTINGS"],["features","⚙ FEATURE CONTROLS"],["feedback","✉ PLAYER FEEDBACK"],["homepage","⌂ HOMEPAGE SETTINGS"],["contact","✉ CONTACT SETTINGS"],["media","▧ IMAGE LIBRARY & HOSTING"],["ads","▤ ADVERTISEMENT SETTINGS"]].map(([id,label])=>`<button data-tab="${id}" class="${tab===id?"active":""}">${label}</button>`).join("")}<button id="admin-logout">↪ LOG OUT</button></div></aside><section class="admin-main"><div class="admin-top"><div><div class="eyebrow">GAMEVERSE CONTROL CENTER</div><h1>${({overview:"OVERVIEW",games:"MANAGE GAMES",add:state.editingId?"EDIT GAME":"ADD NEW GAME",downloads:"DOWNLOAD MANAGER",community:"COMMUNITY SETTINGS",features:"FEATURE CONTROLS",feedback:"PLAYER FEEDBACK",homepage:"HOMEPAGE SETTINGS",contact:"CONTACT SETTINGS",media:"IMAGE LIBRARY & HOSTING",ads:"ADVERTISEMENT SETTINGS"})[tab]}</h1><small style="color:var(--muted)">${esc(state.user.email)}</small></div><a class="btn btn-ghost btn-small" href="#home">VIEW WEBSITE ↗</a></div>${adminContent(tab)}</section></div>${footer()}`;
 
  document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
   state.adminTab=b.dataset.tab;
@@ -467,7 +503,10 @@ function renderAdmin(){
  };
 
  wireAdmin(tab);
+ if(tab==="feedback")loadAdminFeedback();
 }
+
+async function loadAdminFeedback(){const el=$("#admin-feedback-list"),f=state.fb;if(!el||!f)return;try{const snap=await f.getDocs(f.collection(f.db,"feedback"));const rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));el.innerHTML=rows.length?rows.map(x=>`<div class="admin-game-row"><div class="grow"><strong>${esc(state.games.find(g=>g.id===x.gameId)?.title||x.gameId)}</strong><small>${esc(x.message)} · ${x.createdAt?.toDate?x.createdAt.toDate().toLocaleString():"Date unavailable"}</small></div><button class="btn btn-small" data-feedback-delete="${esc(x.id)}">DELETE</button></div>`).join(""):'<div class="empty">No feedback received yet.</div>';document.querySelectorAll('[data-feedback-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this feedback?'))return;await f.deleteDoc(f.doc(f.db,'feedback',b.dataset.feedbackDelete));loadAdminFeedback()})}catch(e){el.textContent="Could not load feedback. Check Firestore rules and administrator access.";console.warn(e)}}
 
 function adminContent(tab){
  if(tab==="overview")return `<div class="stats"><div class="stat"><span>Total games</span><strong>${state.games.length}</strong></div><div class="stat"><span>Published</span><strong>${state.games.filter(g=>g.published).length}</strong></div><div class="stat"><span>Featured</span><strong>${state.games.filter(g=>g.featured&&g.published).length}</strong></div><div class="stat"><span>Ads status</span><strong style="font-size:22px;color:${state.settings.ads.enabled?"var(--green)":"var(--gold)"}">${state.settings.ads.enabled?"ON":"OFF"}</strong></div></div><div class="panel"><h3>QUICK ACTIONS</h3><button class="btn btn-primary" data-quick="add">＋ ADD A GAME</button> <button class="btn" data-quick="games">MANAGE LIBRARY</button></div><div class="panel"><h3>RECENT GAMES</h3>${state.games.slice(0,5).map(g=>`<div class="admin-game-row">${thumbHTML(g)}<div class="grow"><strong>${esc(g.title)}</strong><small>${g.published?"Published":"Draft"}</small></div></div>`).join("")}</div>`;
@@ -476,9 +515,26 @@ function adminContent(tab){
 
  if(tab==="add")return gameForm();
 
+ if(tab==="downloads"){
+  const d=state.settings.downloads||DEFAULT_SETTINGS.downloads;
+  return `<div class="panel"><h3>DOWNLOAD PAGE SETTINGS</h3><form id="downloads-toggle-form" class="form-grid"><div class="form-row full"><label class="check-row"><input type="checkbox" name="enabled" ${d.enabled?'checked':''}> ENABLE PUBLIC DOWNLOAD PAGE</label></div><div class="form-row full"><button class="btn btn-primary">SAVE DOWNLOAD SETTINGS</button></div></form><p class="muted-note" style="text-align:left">Free downloads only. Paid games and checkout are not included in this release.</p></div><div class="panel"><h3>ADD A DOWNLOAD</h3><form id="download-add-form" class="form-grid"><div class="form-row"><label>Game / file title *</label><input class="field" name="title" maxlength="90" required></div><div class="form-row"><label>File type *</label><select class="field" name="fileType"><option value="APK">Android APK</option><option value="ZIP">PC ZIP</option><option value="EXE">Windows EXE</option><option value="OTHER">Other</option></select></div><div class="form-row full"><label>Description</label><textarea class="field" name="description" maxlength="500"></textarea></div><div class="form-row full"><label>Game file — APK, ZIP or EXE (optional)</label><input class="field" name="downloadFile" type="file" accept=".apk,.zip,.exe,application/zip,application/vnd.android.package-archive,application/vnd.microsoft.portable-executable"><small class="muted-note">Upload requires a Cloudinary unsigned raw-file preset. Or provide a hosted URL below.</small></div><div class="form-row full"><label>Hosted download URL (use if not uploading a file)</label><input class="field" name="url" type="url" placeholder="https://..."></div><div class="form-row full"><label>Cover image — upload JPG, PNG or WebP</label><input class="field" name="imageFile" type="file" accept="image/jpeg,image/png,image/webp"><small class="muted-note">Images upload to your configured Cloudinary account. Configure it under Image Library & Hosting first.</small></div><div class="form-row"><label class="check-row"><input type="checkbox" name="published" checked> Publish immediately</label></div><div class="form-row full"><button class="btn btn-primary">＋ ADD DOWNLOAD</button></div></form></div><div class="panel"><h3>MANAGE DOWNLOADS</h3>${d.items.length?d.items.map(x=>`<div class="admin-game-row"><div class="grow"><strong>${esc(x.title)}</strong><small>${esc(x.fileType)} · Free · ${x.published?'Published':'Draft'}</small></div><div class="row-actions"><button class="btn btn-small" data-download-edit="${esc(x.id)}">EDIT</button><button class="btn btn-small" data-download-toggle="${esc(x.id)}">${x.published?'UNPUBLISH':'PUBLISH'}</button><button class="btn btn-small" data-download-delete="${esc(x.id)}">DELETE</button></div></div>`).join(''):'<div class="empty">No download entries yet.</div>'}</div>`;
+ }
+
+ if(tab==="features"){
+  const x=state.settings.features||DEFAULT_SETTINGS.features;
+  return `<div class="panel"><h3>FEATURE ON / OFF CONTROLS</h3><form id="features-form" class="form-grid">
+  ${[["tasksEnabled","Community tasks"],["ratingsEnabled","Game star ratings"],["feedbackEnabled","Player feedback"],["analyticsEnabled","Real visitor / game analytics"],["rewardedAdsEnabled","Rewarded ads (requires approved ad provider integration)"]].map(([k,l])=>`<div class="form-row full"><label class="check-row"><input type="checkbox" name="${k}" ${x[k]?'checked':''}> ${l}</label></div>`).join('')}
+  <div class="form-row"><label>Task reset interval (hours)</label><input class="field" name="taskIntervalHours" type="number" min="1" max="720" value="${Number(x.taskIntervalHours)||24}"></div>
+  <div class="form-row full"><label>Cloudflare Analytics Worker URL</label><input class="field" name="statsApiUrl" type="url" value="${esc(x.statsApiUrl||'')}" placeholder="https://your-worker.workers.dev"><small class="muted-note">Required for shared visitor counts, online count, game views and play counts. Deploy the included analytics-worker folder and paste its URL here.</small></div>
+  <div class="form-row full"><button class="btn btn-primary">SAVE FEATURE SETTINGS</button></div></form></div>
+  <div class="panel"><h3>REWARDED ADS STATUS</h3><p class="section-sub">The switch above is a feature gate only. Genuine rewarded-ad completion and one-hour access cannot be enabled until an ad network account, rewarded placement and server-side verification callback are configured. GAMEVERSE will not fake ad views or unlock access from a simple button click.</p><span class="status-pill warn">${x.rewardedAdsEnabled?'Waiting for provider verification setup':'Disabled'}</span></div>`;
+ }
+
+ if(tab==="feedback")return `<div class="panel"><h3>PLAYER FEEDBACK</h3><p class="section-sub">Feedback submitted by visitors is stored in Firestore. Only the verified administrator can read or delete it.</p><div id="admin-feedback-list" class="empty">Loading feedback…</div></div>`;
+
  if(tab==="community"){
   const c=state.settings.community;
-  return `<div class="panel"><h3>UNLOCK SCREEN TASKS</h3><p class="section-sub">Leave a URL empty or disable a task to hide it from visitors.</p><form id="community-form" class="form-grid">${[["youtube","YouTube channel URL"],["like","Like video URL"],["comment","Comment video URL"],["discord","Discord invite URL"]].map(([k,l])=>`<div class="form-row"><label>${l}</label><input class="field" name="${k}" type="url" value="${esc(c[k]||"")}" placeholder="https://..."><label class="check-row"><input type="checkbox" name="enabled_${k}" ${c.enabled?.[k]!==false?"checked":""}> Show this task when a valid link is present</label></div>`).join("")}<div class="form-row full"><button class="btn btn-primary">SAVE COMMUNITY SETTINGS</button></div></form></div>`;
+  return `<div class="panel"><h3>UNLOCK SCREEN TASKS</h3><p class="section-sub">Leave a URL empty or disable a task to hide it from visitors.</p><form id="community-form" class="form-grid">${[["youtube","YouTube channel URL"],["like","Like video URL"],["comment","Comment video URL"],["discord","Discord invite URL"]].map(([k,l])=>`<div class="form-row"><label>${l}</label><input class="field" name="${k}" type="url" value="${esc(c[k]||"")}" placeholder="https://..."><label class="check-row"><input type="checkbox" name="enabled_${k}" ${c.enabled?.[k]!==false?"checked":""}> Show this task when a valid link is present</label></div>`).join("")}<div class="form-row"><label>Reset task progress after (hours)</label><input class="field" name="taskIntervalHours" type="number" min="1" max="720" value="${Number(state.settings.features?.taskIntervalHours)||24}"></div><div class="form-row full"><button class="btn btn-primary">SAVE COMMUNITY SETTINGS</button></div></form></div>`;
  }
 
  if(tab==="homepage"){
@@ -513,6 +569,16 @@ function gameForm(){
  const g=state.games.find(x=>x.id===state.editingId)||{title:"",shortDescription:"",description:"",category:"Action",url:"",cover:"",logo:"",screenshots:[],featured:false,published:false};
 
  return `<div class="panel"><h3>${state.editingId?"EDIT GAME":"GAME DETAILS"}</h3><form id="game-form" class="form-grid"><div class="form-row"><label>Game title *</label><input class="field" name="title" required value="${esc(g.title)}"></div><div class="form-row"><label>Category</label><input class="field" name="category" value="${esc(g.category)}"></div><div class="form-row full"><label>Short description</label><input class="field" name="shortDescription" value="${esc(g.shortDescription)}"></div><div class="form-row full"><label>Full description</label><textarea class="field" name="description">${esc(g.description)}</textarea></div><div class="form-row full"><label>Game URL</label><input class="field" name="url" type="url" value="${esc(g.url)}" placeholder="https://..."></div><div class="form-row full"><label>Main cover image — landscape 16:9</label><div data-imgfield="cover"></div></div><div class="form-row full"><label>Game logo (optional) — transparent PNG/WebP supported</label><div data-imgfield="logo"></div></div><div class="form-row full"><label>Screenshots — each one is cropped individually</label><div data-imggallery></div></div><div class="form-row"><label class="check-row"><input type="checkbox" name="featured" ${g.featured?"checked":""}> Featured game</label><label class="check-row"><input type="checkbox" name="published" ${g.published?"checked":""}> Publish game</label></div><div class="form-row full"><small class="muted-note" style="text-align:left">Choose an image from your computer, select the visible crop area, and save. Crop settings are saved with the game.</small></div><div class="form-row full"><div class="row-actions"><button class="btn btn-primary">SAVE GAME</button><button class="btn" type="button" id="cancel-edit">CANCEL</button></div></div></form></div>`;
+}
+
+async function uploadDownloadFile(file,host){
+ if(!hostReady(host))throw new Error("Configure Cloudinary first in Image Library & Hosting.");
+ const allowed=/\.(apk|zip|exe)$/i.test(file.name);
+ if(!allowed)throw new Error("Only APK, ZIP and EXE files are allowed.");
+ if(file.size>100*1024*1024)throw new Error("File is larger than 100 MB. Use a trusted external file host for larger files.");
+ const fd=new FormData();fd.append("file",file);fd.append("upload_preset",host.uploadPreset);if(host.folder)fd.append("folder",host.folder+"/downloads");
+ const response=await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(host.cloudName)}/raw/upload`,{method:"POST",body:fd});
+ const data=await response.json();if(!response.ok||!isValidUrl(data.secure_url))throw new Error(data.error?.message||"Download file upload failed.");return data.secure_url;
 }
 
 function wireAdmin(tab){
@@ -608,11 +674,35 @@ function wireAdmin(tab){
   toast("Game saved successfully.");
  });
 
+ $("#downloads-toggle-form")?.addEventListener("submit",async e=>{
+  e.preventDefault(); state.settings.downloads.enabled=new FormData(e.currentTarget).has('enabled'); await persist(); renderAdmin(); toast('Download page settings saved.');
+ });
+ $("#download-add-form")?.addEventListener("submit",async e=>{
+  e.preventDefault(); const form=e.currentTarget; const d=new FormData(form); let url=String(d.get('url')||'').trim();
+  const binary=d.get('downloadFile');
+  if(binary && binary.size){try{await assertAdmin();toast('Uploading game file...');url=await uploadDownloadFile(binary,state.settings.imageHost);}catch(err){console.error(err);toast(err.message||'Game file upload failed.');return;}}
+  if(!isValidUrl(url)){toast('Upload a game file or enter a valid HTTPS download URL.');return;}
+  const file=d.get('imageFile'); let image='';
+  if(file && file.size){
+   if(!file.type.startsWith('image/')){toast('Choose a valid image file.');return;}
+   if(!hostReady(state.settings.imageHost)){toast('Configure Cloudinary under Image Library & Hosting before uploading cover images.');return;}
+   try{await assertAdmin();toast('Uploading cover image...');const uploaded=await uploadToHost(file,state.settings.imageHost);image=uploaded.url;}
+   catch(err){console.error(err);toast(err.message||'Cover image upload failed.');return;}
+  }
+  const item={id:'download-'+crypto.randomUUID(),title:String(d.get('title')).trim(),fileType:String(d.get('fileType')),description:String(d.get('description')||'').trim(),url,image,paid:false,published:d.has('published'),createdAt:Date.now()};
+  state.settings.downloads.items.unshift(item); await persist(); renderAdmin(); toast('Free download added.');
+ });
+ document.querySelectorAll('[data-download-edit]').forEach(b=>b.onclick=async()=>{const x=state.settings.downloads.items.find(i=>i.id===b.dataset.downloadEdit);if(!x)return;const title=prompt("Download title",x.title);if(title===null)return;const description=prompt("Description",x.description||"");if(description===null)return;const url=prompt("Direct download URL",x.url);if(url===null)return;if(!isValidUrl(url)){toast("Enter a valid HTTP/HTTPS URL.");return}x.title=title.trim().slice(0,90)||x.title;x.description=description.trim().slice(0,500);x.url=url.trim();await persist();renderAdmin();toast("Download updated.")});
+ document.querySelectorAll('[data-download-toggle]').forEach(b=>b.onclick=async()=>{const x=state.settings.downloads.items.find(i=>i.id===b.dataset.downloadToggle);if(!x)return;x.published=!x.published;await persist();renderAdmin();toast(x.published?'Download published.':'Download unpublished.');});
+ document.querySelectorAll('[data-download-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this download entry?'))return;state.settings.downloads.items=state.settings.downloads.items.filter(i=>i.id!==b.dataset.downloadDelete);await persist();renderAdmin();toast('Download entry deleted.');});
+
+ $("#features-form")?.addEventListener("submit",async e=>{e.preventDefault();const d=new FormData(e.currentTarget);const x=state.settings.features;for(const k of ["tasksEnabled","ratingsEnabled","feedbackEnabled","analyticsEnabled","rewardedAdsEnabled"])x[k]=d.has(k);x.taskIntervalHours=Math.max(1,Math.min(720,Number(d.get("taskIntervalHours"))||24));const u=String(d.get("statsApiUrl")||"").trim();if(u&&!isValidUrl(u)){toast("Enter a valid Worker URL.");return}x.statsApiUrl=u;await persist();renderAdmin();toast("Feature settings saved.")});
  $("#community-form")?.addEventListener("submit",async e=>{
   e.preventDefault();
 
   const d=new FormData(e.currentTarget);
 
+  state.settings.features.taskIntervalHours=Math.max(1,Math.min(720,Number(d.get("taskIntervalHours"))||24));
   for(const k of ["youtube","like","comment","discord"]){
    const v=d.get(k).trim();
 
@@ -934,27 +1024,41 @@ async function persist(){
  }
 }
 
+function isUnlocked(){const expiry=Number(localStorage.getItem("gv_unlock_expires")||0);if(localStorage.getItem("gv_unlocked")==="yes"&&expiry>Date.now())return true;localStorage.removeItem("gv_unlocked");localStorage.removeItem("gv_unlock_expires");return false}
+let visitStarted=false;
+function startVisitorHeartbeat(){if(visitStarted)return;visitStarted=true;const send=()=>trackMetric("heartbeat");trackMetric("visit");send();setInterval(send,30000)}
 function render(){
  const hash=location.hash||"#";
+ if(hash!=="#admin"&&hash!=="#unlock"&&hash!=="#")startVisitorHeartbeat();
 
  if(hash==="#"||hash==="#unlock"){
-  if(localStorage.getItem("gv_unlocked")==="yes")navigate("#home");
+  if(isUnlocked())navigate("#home");
   else renderUnlock();
   return;
  }
 
  if(hash==="#home"){
   renderHome();
+  startVisitorHeartbeat();
+  loadFooterStats();
   return;
  }
 
  if(hash==="#games"){
   renderGames();
+  loadFooterStats();
+  return;
+ }
+
+ if(hash==="#downloads"){
+  renderDownloads();
+  loadFooterStats();
   return;
  }
 
  if(hash.startsWith("#game/")){
   renderGame(decodeURIComponent(hash.slice(6)));
+  loadFooterStats();
   return;
  }
 
