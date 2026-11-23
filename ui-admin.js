@@ -2,6 +2,7 @@
 import { state, $, $$, esc, toast, confirmDialog, openModal, fmtNum, timeAgo, setBusy, isValidUrl } from './core.js';
 import { api, apiBase, apiConfigured, loadConfig } from './api.js';
 import { mountDownloads } from './ui-admin-downloads.js';
+import { configureAudio, previewMusic, stopPreview, toggleMusicPlayback, toggleMusicMute } from './audio.js';
 
 const A = (path, opts = {}) => api(path, { auth: 'admin', ...opts });
 const enc = encodeURIComponent;
@@ -44,7 +45,65 @@ export async function mountAdminFeature(tab, rerender) {
     if (tab === 'features') return await features(root, rerender);
     if (tab === 'rewarded') return await rewarded(root, rerender);
     if (tab === 'feedback') return await feedback(root, rerender);
+    if (tab === 'audio') return await audioSettings(root, rerender);
   } catch (e) { failBox(root, e, rerender); }
+}
+
+
+/* ============================ background music & UI sound ============================ */
+async function audioSettings(root, rerender) {
+  const { config: cfg } = await A('/v1/admin/config');
+  const a = { enabled:false, musicUrl:'', musicTitle:'', musicVolume:35, uiSoundsEnabled:true, uiSoundsVolume:22, ...(cfg.audio||{}) };
+  root.innerHTML = `<div class="panel">
+    <h3>BACKGROUND MUSIC &amp; SOUND SETTINGS</h3>
+    <p class="section-sub">Manage website music and interface sounds. Website audio is automatically silent inside the GameVerse game player.</p>
+    <form id="gv-audio-form" class="form-grid">
+      <div class="form-row full"><label for="gv-audio-file">UPLOAD BACKGROUND MUSIC (MP3 · MAX 15 MB)</label><input class="field" id="gv-audio-file" type="file" accept=".mp3,audio/mpeg"><small class="muted-note left">Uploads use your existing Cloudinary image-host configuration. No R2 or paid storage is added.</small></div>
+      <div class="form-row full"><label for="gv-audio-url">OR EXTERNAL HTTPS MP3 URL</label><input class="field" id="gv-audio-url" name="musicUrl" type="url" placeholder="https://example.com/music.mp3" value="${esc(a.musicUrl)}"></div>
+      <div class="form-row full"><label for="gv-audio-title">MUSIC TITLE / FILENAME</label><input class="field" id="gv-audio-title" name="musicTitle" maxlength="120" value="${esc(a.musicTitle)}" placeholder="GameVerse background music"></div>
+      <div class="form-row"><label class="check-row"><input type="checkbox" name="enabled" ${a.enabled?'checked':''}> Background music ON</label></div>
+      <div class="form-row"><label for="gv-audio-volume">DEFAULT MUSIC VOLUME <output id="gv-audio-vol-out">${a.musicVolume}%</output></label><input class="field" id="gv-audio-volume" name="musicVolume" type="range" min="0" max="100" value="${a.musicVolume}"></div>
+      <div class="form-row"><label class="check-row"><input type="checkbox" name="uiSoundsEnabled" ${a.uiSoundsEnabled?'checked':''}> UI sound effects ON</label></div>
+      <div class="form-row"><label for="gv-ui-volume">UI SOUND VOLUME <output id="gv-ui-vol-out">${a.uiSoundsVolume}%</output></label><input class="field" id="gv-ui-volume" name="uiSoundsVolume" type="range" min="0" max="100" value="${a.uiSoundsVolume}"></div>
+      <div class="form-row full"><div class="row-actions"><button type="button" class="btn btn-small" id="gv-audio-preview">▶ PREVIEW MUSIC</button><button type="button" class="btn btn-small" id="gv-audio-stop">■ STOP PREVIEW</button><button type="button" class="btn btn-small" id="gv-audio-live">▶ / ❚❚ WEBSITE MUSIC</button><button type="button" class="btn btn-small" id="gv-audio-mute">MUTE / UNMUTE</button></div><small id="gv-audio-current" class="muted-note left">Current track: ${esc(a.musicTitle || (a.musicUrl ? 'Background music' : 'No music uploaded'))}</small></div>
+      <div class="form-row full"><div class="row-actions"><button class="btn btn-primary" type="submit">SAVE AUDIO SETTINGS</button><button class="btn btn-ghost" type="button" id="gv-audio-reset">RESTORE DEFAULTS</button></div></div>
+    </form>
+  </div>
+  <div class="panel"><h3>PLAYER AUDIO RULE</h3><p class="section-sub">When a visitor enters #play/<game-id>, GameVerse pauses its background music and disables all website sound effects. On exit, music resumes only if it was playing before the game opened. Game audio is not controlled.</p></div>`;
+  const form = $('#gv-audio-form'), file = $('#gv-audio-file'), url = $('#gv-audio-url'), title = $('#gv-audio-title');
+  const musicVol = $('#gv-audio-volume'), uiVol = $('#gv-ui-volume');
+  musicVol.oninput = () => { $('#gv-audio-vol-out').textContent = `${musicVol.value}%`; configureAudio({...a,musicVolume:+musicVol.value,uiSoundsVolume:+uiVol.value}); };
+  uiVol.oninput = () => { $('#gv-ui-vol-out').textContent = `${uiVol.value}%`; configureAudio({...a,musicVolume:+musicVol.value,uiSoundsVolume:+uiVol.value}); };
+  async function uploadSelectedAudio(){
+    const f=file.files?.[0]; if(!f)return url.value.trim()||a.musicUrl;
+    if(f.size>15*1024*1024||!(f.type==='audio/mpeg'||/\.mp3$/i.test(f.name)))throw new Error('Choose an MP3 file up to 15 MB.');
+    const h=state.settings.imageHost||{},cloud=String(h.cloudName||'').trim(),preset=String(h.uploadPreset||'').trim();
+    if(!cloud||!preset)throw new Error('Configure Cloudinary in Image Library & Hosting before uploading MP3 files. You can still use an HTTPS MP3 URL.');
+    toast('Uploading audio…');const fd=new FormData();fd.append('file',f);fd.append('upload_preset',preset);if(h.folder)fd.append('folder',`${h.folder}/audio`);
+    const r=await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloud)}/video/upload`,{method:'POST',body:fd});const d=await r.json();
+    if(!r.ok||!d.secure_url)throw new Error(d.error?.message||'Audio upload failed.');
+    url.value=d.secure_url;title.value=f.name;$('#gv-audio-current').textContent=`Uploaded: ${f.name}`;file.value='';return d.secure_url;
+  }
+  $('#gv-audio-preview').onclick = async () => {
+    try { const src=await uploadSelectedAudio(); if(!/^https:\/\//i.test(src))return toast('Add an HTTPS MP3 URL or upload a file first.','error'); previewMusic(src); }
+    catch(e){toast(e.message,'error');}
+  };
+  $('#gv-audio-stop').onclick = stopPreview;
+  $('#gv-audio-live').onclick = async () => { const playing=await toggleMusicPlayback(); toast(playing?'Website music playing.':'Website music paused.', 'info'); };
+  $('#gv-audio-mute').onclick = () => { const unmuted=toggleMusicMute(); toast(unmuted?'Website music unmuted.':'Website music muted.', 'info'); };
+  $('#gv-audio-reset').onclick = async () => {
+    form.elements.enabled.checked=false; url.value=''; title.value=''; musicVol.value=35; uiVol.value=22;
+    form.elements.uiSoundsEnabled.checked=true; musicVol.oninput();uiVol.oninput();
+    try { const r=await A('/v1/admin/config',{method:'PUT',body:{audio:{enabled:false,musicUrl:'',musicTitle:'',musicVolume:35,uiSoundsEnabled:true,uiSoundsVolume:22}}}); configureAudio(r.config.audio); toast('Audio settings restored to defaults.','success'); rerender(); } catch(e){toast(e.message,'error');}
+  };
+  form.onsubmit = async e => {
+    e.preventDefault(); let src=url.value.trim();
+    try { if(file.files?.[0])src=await uploadSelectedAudio(); } catch(err){return toast(err.message,'error');}
+    if(src && !/^https:\/\//i.test(src))return toast('Music URL must start with HTTPS.','error');
+    const body={audio:{enabled:form.elements.enabled.checked,musicUrl:src,musicTitle:title.value.trim(),musicVolume:+musicVol.value,uiSoundsEnabled:form.elements.uiSoundsEnabled.checked,uiSoundsVolume:+uiVol.value}};
+    try { const r=await A('/v1/admin/config',{method:'PUT',body}); configureAudio(r.config.audio); stopPreview(); toast('Audio settings saved successfully.','success'); rerender(); }
+    catch(err){toast(err.message,'error');}
+  };
 }
 
 /* ============================ overview & analytics ============================ */
