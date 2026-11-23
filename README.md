@@ -1,7 +1,7 @@
 # GAMEVERSE
 
 Gaming directory + community platform. Vanilla JS / Vite front end, Firebase (Auth + Firestore for games & site
-settings), Cloudflare Worker (D1 + R2) for everything that must be shared, persistent or secure.
+settings), Cloudflare Worker + D1 for everything that must be shared, persistent or secure. Download files and cover images use external HTTPS URLs; no R2 bucket or payment setup is required.
 
 ## What's included
 
@@ -14,7 +14,7 @@ settings), Cloudflare Worker (D1 + R2) for everything that must be shared, persi
 | Tests | `worker/test/`, `tests/e2e/` |
 
 ### Features
-* **Free Download Details** – two-step library → individual details page; cover, short/full descriptions, version, dates, developer, supported devices, manually entered requirements, install guide and notices; free download button; admin preview, publish/unpublish, ordering, edit/delete and secure R2/external HTTPS file sources.
+* **Free Download Details** – two-step library → individual details page; cover, short/full descriptions, version, dates, developer, supported devices, manually entered requirements, install guide and notices; free download button; admin preview, publish/unpublish, ordering, edit/delete and external HTTPS file and cover-image URLs.
 * **Independent download ratings and feedback** – separate per-download rating totals/distribution and visitor rating, download-specific issue reports, per-download feedback switch, admin moderation and rate limits.
 * **Download click analytics** – button/ticket requests are counted separately from file requests; neither is represented as proof that a visitor completed a download. No payments anywhere.
 * **Visitor statistics** – total / today / currently online, persisted in D1, shown on the homepage; refreshes don't inflate it.
@@ -32,7 +32,7 @@ settings), Cloudflare Worker (D1 + R2) for everything that must be shared, persi
 
 ## Setup in 4 steps
 1. `npm install` (Vite). Firebase config is already in `firebase-config.js`.
-2. Deploy the Worker – follow **`worker/README.md`** (D1, R2, secrets, migrations, `wrangler deploy`).
+2. Deploy the Worker – follow **`worker/README.md`** (D1, secrets, migrations, `wrangler deploy`).
 3. Connect: admin → *Feature Controls → Server connection* (or set `API_BASE` in `firebase-config.js`).
 4. `firebase deploy --only firestore:rules`, then `npm run build` and deploy the site the way you do today
    (the build output in `dist/` is unchanged in structure; the Worker is a separate deployment).
@@ -49,13 +49,13 @@ Old Firestore download entries can be imported from the Download Manager ("Impor
 ## Testing status (honest summary)
 Verified in this environment:
 * ✅ JavaScript syntax checks pass for the changed front-end and Worker modules.
-* ✅ **48 Worker integration tests** pass – real Worker code against real SQL (SQLite), real RS256 token verification,
-  in-memory R2 incl. multipart upload and range requests.
-* ⚠️ Browser-level desktop/mobile visual testing was not run in this environment.
+* ✅ **44 Worker integration tests** pass – real Worker code against real SQL (SQLite), real RS256 token verification,
+  external-link download flow and D1 integration.
+* ⚠️ Browser-level desktop/mobile visual testing was not run in this environment. The older Playwright admin download scenario still describes R2 uploads and must be updated before using that browser suite.
 
 **Not** verified (could not be, offline sandbox) – please check after deploying:
-* ⚠️ `vite build` could not be run because dependency installation timed out and the Vite executable was unavailable in this environment. Run `npm install` then `npm run build`.
-* ⚠️ Browser-level desktop/mobile visual testing and behaviour on the real Cloudflare runtime (D1/R2/Workers limits), real Firebase Auth/Firestore (the browser tests use a stub SDK), and `firestore.rules`.
+* ⚠️ `npm run build` could not run because Vite is not installed in this environment (`vite: not found`). Run `npm install` then `npm run build`.
+* ⚠️ Browser-level desktop/mobile visual testing and behaviour on the real Cloudflare runtime (D1/Workers limits), real Firebase Auth/Firestore (the browser tests use a stub SDK), and `firestore.rules`.
 * ⚠️ Rewarded ads with a real ad provider (only the server logic was tested with simulated, correctly-signed callbacks).
 
 ## Honest limitations

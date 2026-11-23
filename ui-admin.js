@@ -66,7 +66,7 @@ async function overview(root, rerender) {
   if (!root.isConnected) return; // the admin switched tabs while loading
   const warn = [];
   if (!o.status.tokenSecret) warn.push('TOKEN_SECRET is not set — download links and ticketing will fail. Run <code>wrangler secret put TOKEN_SECRET</code>.');
-  if (!o.status.r2) warn.push('R2 bucket binding “R2” is missing — file uploads are disabled.');
+  if (!o.status.externalDownloadsOnly) warn.push('External download links are the only supported download source.');
   const tile = (label, val, sub) => `<div class="stat-card"><div class="stat-body"><span class="stat-label">${label}</span><strong class="stat-value">${val}</strong><small>${sub || ''}</small></div></div>`;
   const stats = Object.fromEntries(gs.games.map(g => [g.gameId, g]));
   const rows = [...state.games.map(g => ({ id: g.id, title: g.title, live: true, s: stats[g.id] })), ...gs.games.filter(g => !state.games.some(x => x.id === g.gameId)).map(g => ({ id: g.gameId, title: g.gameId, live: false, s: g }))];
@@ -98,7 +98,7 @@ async function features(root, rerender) {
   if (connected && state.apiStatus === 'ok') { try { [cfg, status] = await Promise.all([A('/v1/admin/config').then(r => r.config), A('/v1/admin/overview').then(r => r.status)]); } catch (e) { toast(e.message, 'error'); } }
   if (!root.isConnected) return;
   root.innerHTML = `<div class="panel"><h3>SERVER CONNECTION</h3><p class="section-sub">Ratings, analytics, feedback, tasks, downloads and rewarded ads run on your GAMEVERSE Cloudflare Worker.</p>
-   <div class="conn ${cfg ? 'ok' : 'bad'}"><span class="live-dot ${cfg ? '' : 'off'}"></span>${cfg ? 'Connected' : connected ? 'Not reachable' : 'Not connected'}${status ? ` · R2 ${status.r2 ? 'ready' : 'MISSING'} · TOKEN_SECRET ${status.tokenSecret ? 'set' : 'MISSING'}` : ''}</div>
+   <div class="conn ${cfg ? 'ok' : 'bad'}"><span class="live-dot ${cfg ? '' : 'off'}"></span>${cfg ? 'Connected' : connected ? 'Not reachable' : 'Not connected'}${status ? ` · External links only · TOKEN_SECRET ${status.tokenSecret ? 'set' : 'MISSING'}` : ''}</div>
    <form id="api-form" class="inline-form"><input class="field" name="url" type="url" placeholder="https://gameverse-api.yourname.workers.dev" aria-label="Worker URL" value="${esc(state.settings.features?.statsApiUrl || '')}"><button class="btn btn-primary btn-small">SAVE &amp; TEST</button></form></div>
    ${cfg ? `<div class="panel"><h3>FEATURE ON / OFF</h3><p class="section-sub">Every switch saves instantly and takes effect on the public site within seconds (server-enforced, not just hidden).</p><div class="feature-grid">${FEATURES.map(([k, t, d]) => `<div class="feature-card"><div><strong>${t}</strong><small>${d}</small></div>${sw(`data-feature="${k}"`, cfg.features[k])}</div>`).join('')}</div></div>` : ''}`;
   $('#api-form').onsubmit = async e => {

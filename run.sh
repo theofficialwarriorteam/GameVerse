@@ -1,6 +1,6 @@
 #!/bin/bash
 # Browser tests. Needs: Node 22+, Python 3 + `pip install playwright` + `playwright install chromium`.
-# Each suite gets a fresh harness server (real Worker code on SQLite + in-memory R2) and an empty database.
+# Each suite gets a fresh harness server (real Worker code on SQLite + external HTTPS downloads) and an empty database.
 #   bash tests/e2e/run.sh                # all suites
 #   bash tests/e2e/run.sh public1.py     # one suite
 cd "$(dirname "$0")/../.."
