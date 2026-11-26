@@ -287,10 +287,45 @@ function directAdMarkup(placement){
  }).join("");
 }
 
+function adsterraUnit(placement){
+ const units={
+  homeTop:{kind:"banner",key:"f59c36d29f3c6dee21e0b7e8b0cb834c",width:728,height:90,desktop:true},
+  homeBottom:{kind:"native",key:"f6d34684d8888a723da442a7378d5baf"},
+  gamesBottom:{kind:"banner",key:"fb132a810c078843b7c5bee0d426e47e",width:320,height:50},
+  gameTop:{kind:"banner",key:"03b1777122983b9454d3cdebbe22144c",width:300,height:250}
+ };
+ const unit=units[placement];
+ if(!unit)return "";
+ if(unit.kind==="native")return `<div class="gv-ad gv-adsterra gv-adsterra-native" data-adsterra="native" data-ad-key="${unit.key}"><small class="gv-ad-label">Advertisement</small><div id="container-${unit.key}"></div></div>`;
+ return `<div class="gv-ad gv-adsterra gv-adsterra-banner ${unit.desktop?"desktop-only":""}" data-adsterra="banner" data-ad-key="${unit.key}" data-ad-width="${unit.width}" data-ad-height="${unit.height}"><small class="gv-ad-label">Advertisement</small><div class="gv-adsterra-frame" style="width:${unit.width}px;height:${unit.height}px;max-width:100%"></div></div>`;
+}
+
 function adPlacement(placement){
  const direct=directAdMarkup(placement);
  const google=adSenseUnit(placement);
- return direct||google?`<section class="gv-ad-placement container" aria-label="Advertisements">${direct}${google}</section>`:"";
+ const adsterra=adsterraUnit(placement);
+ return direct||google||adsterra?`<section class="gv-ad-placement container" aria-label="Advertisements">${direct}${google}${adsterra}</section>`:"";
+}
+
+function mountAdsterra(){
+ document.querySelectorAll("[data-adsterra]:not([data-adsterra-loaded])").forEach(slot=>{
+  const kind=slot.dataset.adsterra, key=slot.dataset.adKey;
+  if(!key)return;
+  slot.dataset.adsterraLoaded="1";
+  const script=document.createElement("script");
+  script.async=true;
+  script.dataset.cfasync="false";
+  if(kind==="native"){
+   script.fetchPriority="high";
+   script.src=`https://bauval.org/21/${key}`;
+   slot.appendChild(script);
+  }else{
+   const width=Number(slot.dataset.adWidth),height=Number(slot.dataset.adHeight);
+   window.atOptions={key,format:"iframe",height,width,params:{}};
+   script.src=`https://bauval.org/22/${key}`;
+   slot.querySelector(".gv-adsterra-frame")?.appendChild(script);
+  }
+ });
 }
 
 function mountAdSense(){
@@ -322,6 +357,7 @@ function renderHome(){
  <section class="section container" style="padding-top:0"><div class="section-head"><div><div class="eyebrow">FRESH DROPS</div><h2>RECENTLY ADDED</h2></div></div><div class="game-grid">${recent.length?recent.map(gameCard).join(""):'<div class="empty">Games will appear here when published.</div>'}</div></section>${adPlacement("homeBottom")}
  <section class="section container"><div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap"><div><div class="eyebrow">JOIN THE COMMUNITY</div><h2 style="font:800 34px 'Barlow Condensed';margin:8px 0">${esc(h.communityText)}</h2><p class="section-sub">Follow Winjo Gamerz and connect with other players.</p></div><a class="btn btn-primary" href="${esc(state.settings.contact.discord)}" target="_blank" rel="noopener">JOIN DISCORD ↗</a></div></section></main>${footer()}`;
  mountAdSense();
+ mountAdsterra();
  hydrateStats();
  hydrateFooterStats();
  hydrateCardStats();
@@ -332,6 +368,7 @@ function renderGames(){
 
  app.innerHTML=`${header()}<main class="page-shell container"><div class="page-head"><div class="eyebrow">THE COLLECTION</div><h1 class="page-title">GAME LIBRARY</h1><p>Explore the collection and find your next game.</p></div>${adPlacement("gamesTop")}<div class="toolbar"><input id="game-search" class="field search" placeholder="Search games..."><select id="category-filter" class="field" style="max-width:190px"><option value="">All categories</option>${[...new Set(games.map(g=>g.category||"Other"))].map(c=>`<option>${esc(c)}</option>`).join("")}</select></div><div class="game-grid" id="library-grid">${games.map(gameCard).join("")||'<div class="empty">No published games yet.</div>'}</div>${adPlacement("gamesBottom")}</main>${footer()}`;
  mountAdSense();
+ mountAdsterra();
 
  const filter=()=>{
   const q=$("#game-search").value.toLowerCase();
@@ -351,7 +388,7 @@ function renderGame(id){
  if(!g){navigate("#games");return}
  app.innerHTML=`${header()}<main class="page-shell container">${adPlacement("gameTop")}${detailHTML(g)}${adPlacement("gameBottom")}</main>${footer()}`;
  $("#play-game-btn")?.addEventListener("click",()=>trackGame("play",g.id));
- mountAdSense();trackGame("view",g.id);hydrateGameCommunity(g);wireFeedback(g);hydrateFooterStats();
+ mountAdSense();mountAdsterra();trackGame("view",g.id);hydrateGameCommunity(g);wireFeedback(g);hydrateFooterStats();
 }
 
 function renderContact(){

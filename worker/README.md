@@ -32,7 +32,7 @@ npx wrangler d1 create gameverse            # copy the printed database_id into 
 #    - STATS_TIMEZONE         ← IANA zone used for "today" and daily/weekly task resets (default Asia/Kolkata)
 #    - FIREBASE_PROJECT_ID / ADMIN_EMAIL are pre-filled from firebase-config.js
 
-# 3) Create the schema (and the two starter tasks)
+# 3) Create the schema (and the starter tasks)
 npx wrangler d1 migrations apply gameverse --remote
 
 # 4) Secrets (never commit these)
@@ -64,7 +64,7 @@ firebase deploy --only firestore:rules
 
 ## 2. Database schema
 
-`migrations/0001_init.sql` (base schema), `0002_seed_tasks.sql` (starter tasks), and `0003_download_details.sql` (download metadata, independent ratings/feedback and click counters) – applied with
+`migrations/0001_init.sql` (base schema), `0002_seed_tasks.sql` (starter tasks), `0003_download_details.sql` (download metadata, independent ratings/feedback and click counters), and `0004_seed_game_library_task.sql` (third community task) – applied with
 `wrangler d1 migrations apply`. Tables:
 
 | Table | Purpose |
@@ -142,3 +142,14 @@ The test harness uses SQLite-backed D1 and a stubbed Google key endpoint; it doe
 ## Website audio settings
 
 Background music and UI sound settings are stored inside the existing `settings` D1 row via the existing authenticated `PUT /v1/admin/config` endpoint. Public clients receive the sanitized `audio` settings from `GET /v1/config`. No migration, new D1 table, R2 bucket or additional Worker binding is required. The Worker stores only HTTPS audio URLs and small settings values, never MP3 file bytes.
+
+
+## 7. Adsterra display placements
+
+The public site includes the four approved Adsterra display placements, separate from task completion:
+- 728×90 banner: desktop homepage top.
+- Native banner: homepage lower section.
+- 320×50 banner: game library lower section.
+- 300×250 banner: game detail page top.
+
+These are ordinary display ads. Task 3 is a self-confirmed visit to the GameVerse contact/community page; it does not require an ad impression or click. Add an Adsterra `ads.txt` seller authorization line only if Adsterra supplies one; the existing Google AdSense line is left unchanged.

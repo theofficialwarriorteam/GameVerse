@@ -331,20 +331,20 @@ group('Tasks, reset intervals and access');
 const tasksOf = async v => (await call('GET', '/v1/me', { vid: v })).json;
 await test('seeded tasks exist; admin can add, edit, reorder, disable and delete', async () => {
   let list = (await admin('GET', '/v1/admin/tasks')).json.tasks;
-  assert.deepEqual(list.map(t => t.id), ['seed-youtube', 'seed-discord']);
+  assert.deepEqual(list.map(t => t.id), ['seed-youtube', 'seed-discord', 'seed-game-library']);
   assert.equal((await admin('POST', '/v1/admin/tasks', { title: 'Bad', kind: 'discord', url: 'javascript:alert(1)' })).status, 400);
   assert.equal((await admin('POST', '/v1/admin/tasks', { title: '', kind: 'custom' })).status, 400);
   list = (await admin('POST', '/v1/admin/tasks', { title: 'Watch our trailer', kind: 'youtube_watch', url: 'https://youtu.be/abc', description: 'Watch it', reward: 'access' })).json.tasks;
-  assert.equal(list.length, 3);
+  assert.equal(list.length, 4);
   const mine = list.find(t => t.title === 'Watch our trailer');
   list = (await admin('PUT', `/v1/admin/tasks/${mine.id}`, { title: 'Watch the trailer', enabled: false, resetMode: 'custom', resetHours: 6 })).json.tasks;
   const edited = list.find(t => t.id === mine.id); assert.equal(edited.title, 'Watch the trailer'); assert.equal(edited.enabled, false); assert.equal(edited.resetHours, 6);
-  assert.equal((await tasksOf(newVid())).tasks.items.length, 2);
-  list = (await admin('PUT', '/v1/admin/tasks-order', { ids: [mine.id, 'seed-discord', 'seed-youtube'] })).json.tasks;
-  assert.deepEqual(list.map(t => t.id), [mine.id, 'seed-discord', 'seed-youtube']);
+  assert.equal((await tasksOf(newVid())).tasks.items.length, 3);
+  list = (await admin('PUT', '/v1/admin/tasks-order', { ids: [mine.id, 'seed-discord', 'seed-youtube', 'seed-game-library'] })).json.tasks;
+  assert.deepEqual(list.map(t => t.id), [mine.id, 'seed-discord', 'seed-youtube', 'seed-game-library']);
   list = (await admin('DELETE', `/v1/admin/tasks/${mine.id}`)).json.tasks;
-  assert.equal(list.length, 2);
-  await admin('PUT', '/v1/admin/tasks-order', { ids: ['seed-youtube', 'seed-discord'] });
+  assert.equal(list.length, 3);
+  await admin('PUT', '/v1/admin/tasks-order', { ids: ['seed-youtube', 'seed-discord', 'seed-game-library'] });
 });
 await test('completion needs the link to be opened and a minimum wait (self-confirmed, never "verified")', async () => {
   await setCfg({ tasks: { minSeconds: 30 } });
@@ -358,12 +358,12 @@ await test('completion needs the link to be opened and a minimum wait (self-conf
   const me = await tasksOf(v);
   const t = me.tasks.items.find(x => x.id === 'seed-youtube');
   assert.equal(t.completed, true); assert.equal(t.verification, 'self'); assert.ok(t.resetsAt > me.serverNow);
-  assert.equal(me.tasks.completed, 1); assert.equal(me.tasks.requiredTotal, 2);
+  assert.equal(me.tasks.completed, 1); assert.equal(me.tasks.requiredTotal, 3);
   assert.equal((await call('POST', '/v1/tasks/seed-youtube/complete', { vid: v })).json.alreadyCompleted, true);
   assert.equal((await call('POST', '/v1/tasks/nope/open', { vid: v })).status, 404);
   await setCfg({ tasks: { minSeconds: 0 } });
 });
-const finishAll = async v => { for (const id of ['seed-youtube', 'seed-discord']) { await call('POST', `/v1/tasks/${id}/open`, { vid: v }); const r = await call('POST', `/v1/tasks/${id}/complete`, { vid: v }); assert.ok(r.status === 200, JSON.stringify(r.json)); } };
+const finishAll = async v => { for (const id of ['seed-youtube', 'seed-discord', 'seed-game-library']) { await call('POST', `/v1/tasks/${id}/open`, { vid: v }); const r = await call('POST', `/v1/tasks/${id}/complete`, { vid: v }); assert.ok(r.status === 200, JSON.stringify(r.json)); } };
 await test('persisted per visitor; access is granted only after ALL required tasks, then expires', async () => {
   const v = newVid();
   assert.equal((await call('POST', '/v1/access/claim', { vid: v })).status, 409);
@@ -371,6 +371,7 @@ await test('persisted per visitor; access is granted only after ALL required tas
   assert.equal((await call('POST', '/v1/access/claim', { vid: v })).status, 409);
   let me = await tasksOf(v); assert.equal(me.access.gateActive, true); assert.equal(me.access.granted, false); assert.equal(me.access.canClaimWithTasks, false);
   await call('POST', '/v1/tasks/seed-discord/open', { vid: v }); await call('POST', '/v1/tasks/seed-discord/complete', { vid: v });
+  await call('POST', '/v1/tasks/seed-game-library/open', { vid: v }); await call('POST', '/v1/tasks/seed-game-library/complete', { vid: v });
   const claim = await call('POST', '/v1/access/claim', { vid: v });
   assert.equal(claim.status, 200); assert.equal(claim.json.access.granted, true); assert.equal(claim.json.access.source, 'tasks');
   assert.ok(Math.abs(claim.json.access.expiresAt - (nowSec() + 24 * 3600)) < 5);
@@ -380,24 +381,24 @@ await test('persisted per visitor; access is granted only after ALL required tas
 });
 await test('daily reset (calendar day in the configured zone)', async () => {
   await setCfg({ tasks: { resetMode: 'daily' } });
-  const v = newVid(); await finishAll(v); assert.equal((await tasksOf(v)).tasks.completed, 2);
+  const v = newVid(); await finishAll(v); assert.equal((await tasksOf(v)).tasks.completed, 3);
   env.DB.raw.prepare('UPDATE task_completions SET completed_at=completed_at-172800 WHERE vid=?').run(v);
   assert.equal((await tasksOf(v)).tasks.completed, 0);
 });
 await test('weekly, custom-hour and never reset modes', async () => {
   const v = newVid(); await finishAll(v);
   await setCfg({ tasks: { resetMode: 'weekly' } });
-  assert.equal((await tasksOf(v)).tasks.completed, 2);
+  assert.equal((await tasksOf(v)).tasks.completed, 3);
   env.DB.raw.prepare('UPDATE task_completions SET completed_at=completed_at-9*86400 WHERE vid=?').run(v);
   assert.equal((await tasksOf(v)).tasks.completed, 0);
   await finishAll(v);
   await setCfg({ tasks: { resetMode: 'custom', resetHours: 3 } });
-  assert.equal((await tasksOf(v)).tasks.completed, 2);
+  assert.equal((await tasksOf(v)).tasks.completed, 3);
   env.DB.raw.prepare('UPDATE task_completions SET completed_at=completed_at-4*3600 WHERE vid=?').run(v);
   assert.equal((await tasksOf(v)).tasks.completed, 0);
   await setCfg({ tasks: { resetMode: 'never' } });
   env.DB.raw.prepare('UPDATE task_completions SET completed_at=1000 WHERE vid=?').run(v);
-  assert.equal((await tasksOf(v)).tasks.completed, 2);
+  assert.equal((await tasksOf(v)).tasks.completed, 3);
   await setCfg({ tasks: { resetMode: 'daily', resetHours: 24 } });
 });
 await test('per-task reset override beats the global interval', async () => {
@@ -411,9 +412,11 @@ await test('per-task reset override beats the global interval', async () => {
 });
 await test('"reward: none" tasks do not block access; tasks switch off disables everything', async () => {
   await admin('PUT', '/v1/admin/tasks/seed-discord', { reward: 'none' });
+  await admin('PUT', '/v1/admin/tasks/seed-game-library', { reward: 'none' });
   const v = newVid(); await call('POST', '/v1/tasks/seed-youtube/open', { vid: v }); await call('POST', '/v1/tasks/seed-youtube/complete', { vid: v });
   assert.equal((await tasksOf(v)).access.canClaimWithTasks, true);
   await admin('PUT', '/v1/admin/tasks/seed-discord', { reward: 'access' });
+  await admin('PUT', '/v1/admin/tasks/seed-game-library', { reward: 'access' });
   await setCfg({ features: { tasks: false } });
   const me = await tasksOf(v); assert.equal(me.tasks.enabled, false); assert.equal(me.tasks.items.length, 0); assert.equal(me.access.gateActive, false);
   assert.equal((await call('POST', '/v1/tasks/seed-youtube/open', { vid: v })).status, 403);
