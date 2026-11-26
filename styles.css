@@ -114,3 +114,20 @@ img.gv-logo-plain{left:4%;bottom:6%;width:30%;height:auto;max-height:70%;object-
 /* GAMEVERSE download centre */
 .download-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.download-card{overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:16px}.download-art{height:155px;background:linear-gradient(135deg,#171e2b,#252d3b);display:grid;place-items:center;color:#8793a5;font-size:48px}.download-art img{width:100%;height:100%;object-fit:cover}.download-info{padding:18px}.download-meta{display:flex;justify-content:space-between;gap:10px;align-items:center}.download-type,.download-free{font-size:10px;font-weight:900;letter-spacing:1px;padding:6px 8px;border-radius:5px;background:#202938;color:#b9c5d5}.download-free{background:rgba(47,190,120,.13);color:#55d69a}.download-info h2{font:700 25px 'Barlow Condensed';margin:14px 0 7px;text-transform:uppercase}.download-info p{min-height:60px;color:var(--muted);font-size:12px;line-height:1.7}.download-info .btn{width:100%}@media(max-width:900px){.download-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){.download-grid{grid-template-columns:1fr}}
 .gv-rating-panel{margin-top:24px}.gv-rating-panel h2{font:800 26px 'Barlow Condensed';margin:0 0 12px}.gv-live-stats{display:inline-block;margin-left:8px;color:var(--muted);font-size:11px}.task:has(.task-check:checked){border-color:rgba(67,210,139,.55);background:rgba(43,175,111,.09)}.task:has(.task-check:checked) .task-copy strong{color:#68e0a2}.task-check{accent-color:#31c982}
+
+/* Keep fixed-size Adsterra banner wrappers at the actual creative width. */
+.gv-ad-placement .gv-adsterra-banner{
+  width:fit-content !important;
+  max-width:calc(100% - 20px) !important;
+  justify-self:center;
+  align-self:center;
+}
+.gv-ad-placement .gv-adsterra-banner .gv-adsterra-frame{
+  width:min(var(--gv-ad-width, 100%), 100%);
+  max-width:100%;
+  margin-inline:auto;
+}
+.gv-ad-placement .gv-adsterra-banner[data-ad-width="728"] .gv-adsterra-frame{width:min(728px,100%)}
+.gv-ad-placement .gv-adsterra-banner[data-ad-width="320"] .gv-adsterra-frame{width:min(320px,100%)}
+.gv-ad-placement .gv-adsterra-banner[data-ad-width="300"] .gv-adsterra-frame{width:min(300px,100%)}
+.gv-ad-placement .gv-adsterra-banner .gv-ad-label{padding-top:8px}
